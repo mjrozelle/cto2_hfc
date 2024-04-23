@@ -1,0 +1,9 @@
+v 0.0.1
+d 'CTO2_HFC': Program to write template HFC using cto2-processed survey data
+d 
+d Program to write template HFC using cto2-processed
+d 
+d Distribution-Date:   20240423
+d License: Academic Free License v3.0
+d 
+F cto2_hfc.ado
