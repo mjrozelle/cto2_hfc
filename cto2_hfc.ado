@@ -153,7 +153,7 @@ gen row_n = _n
 *===============================================================================
 
 cap file close myfile
-file open myfile using "`macval(texdirectory)'/template_hfc.do", write replace 
+file open myfile using "`texdirectory'/template_hfc.do", write replace 
 	
 file write myfile ///
 	"/*" ///
@@ -166,7 +166,8 @@ file write myfile ///
 	_n "* 	Setup" _n /// 
 	"`hbanner'" ///
 	_n(2) "clear all" _n "version `version'" _n "set more off" _n "set maxvar 120000" ///
-	_n "cap log close" _n "set trace off" _n "set linesize 200" _n(2) ///
+	_n "cap log close" _n "set trace off" _n "set graphics off" _n ///
+	"set linesize 200" _n(2) ///
 	"`hbanner'" ///
 	_n "* 	Macros" _n /// 
 	"`hbanner'" ///
@@ -323,7 +324,8 @@ foreach r in 0 `replevels' {
 		_n(2) "cwf `r_groupname'"
 		
 	missingness_check, frame(`r_groupname') replevel(`r') ///
-		texdirectory("`macval(texdirectory)'") framename(`r_grouplabel')
+		texdirectory("`macval(texdirectory)'") framename(`r_grouplabel') ///
+		enum(`enum')
 	
 	levelsof row_n if repeat_group == `r' & !missing(tex_gr_basic_overview), clean local(rows)
 	foreach c in `rows' {
@@ -648,7 +650,8 @@ end
 
 cap prog drop missingness_check
 program define missingness_check 
-syntax, FRAME(string) REPLEVEL(integer) TEXDIRECTORY(string) FRAMENAME(string)
+syntax, FRAME(string) REPLEVEL(integer) TEXDIRECTORY(string) FRAMENAME(string) ///
+	ENUM(string)
 qui {
 	
 local hbanner = "*" + ("=")* 65
@@ -665,59 +668,127 @@ foreach thing in brek tab {
 	}
 	
 }
-
-valuesof name if repeat_group == `replevel'
-local varlist `r(values)'
-local varlist = ustrregexra("`varlist'", "(.{70,}?)\s", "$1 ///" + ///
-			char(10) + char(9))
+			
+count if repeat_group == `replevel'
+local repeats = ceil(`r(N)' / 50)
 
 file write myfile _n(2) `"`lbanner'"' _n ///
     "*" _tab "Missingness" _n ///
 	"`lbanner'" _n(2) ///
-	`"local varlist_`replevel' `varlist'"' _n ///
-	`"local nx: list sizeof varlist_`replevel'"' _n ///
-	`"local misstypes nonmissing missing dontknow refused other"' _n ///
-	`"matrix missing = J(\`nx', 5, .z)"' _n ///
-	`"matrix rownames missing = \`varlist_`replevel''"' _n ///
-	`"matrix colnames missing = \`misstypes'"' _n(2) ///
-	`"local conds .d .r .o"' _n ///
+	`"cap frame drop missingness"' _n ///
+	`"frame create missingness strL varname strL varlabel int value int type int n ///"' _n ///
+	_tab `"int enum strL enum_str int total_surveys"' _n(2) ///
+	`"frame meta: valuesof name if repeat_group == `replevel' & `skip'"' ///
+	`"question_type != 3 | question_type == 3 & within_order == 1"' _n ///
+	`"local wanted_varlist \`r(values)'"' _n ///
+	`"ds"' _n ///
+	`"local available_varlist \`r(varlist)'"' _n ///
+	`"local varlist : list available_varlist & wanted_varlist"' _n ///
+	`"cap assert ustrregexm("\`: type `enum''", "str") == 0"' _n ///
+	`"if _rc sencode `enum', replace"' _n(2) ///
+	`"levelsof `enum', clean local(enums)"' _n ///
+	`"local vals : value label `enum'"' _n ///
 	`"local j = 0"' _n ///
-	`"foreach s in \`misstypes' {"' _n(2) ///
+	`"quietly foreach var of varlist \`varlist' {"' _n(2) ///
 	_tab `"local ++j"' _n ///
-	_tab `"if !inlist("\`s'", "nonmissing", "missing") gettoken cond conds : conds"' _n(2) ///
+	_tab `"local type : type \`var'"' _n ///
+	_tab `"local conds "\`var' == .d" ///"' _n ///
+	_tab `""\`var' == .r" ///"' _n ///
+	_tab `""\`var' == .o" ///"' _n ///
+	_tab `""missing(\`var')" ///"' _n ///
+	_tab `""!missing(`var')""' _n(2) ///
 	_tab `"local i = 0"' _n ///
-	_tab `"foreach var in \`varlist_`replevel'' {"' _n(2) ///
-	_tab _tab `"local ++i"' _n(2) ///
-	_tab _tab `"if "\`s'" == "nonmissing" {"' _n(2) ///
-	_tab _tab _tab `"count if !missing(\`var')"' _n ///
-	_tab _tab _tab `"matrix missing[\`i', \`j'] = \`r(N)'"' _n(2) ///
-	_tab _tab `"}"' _n ///
-	_tab _tab `"else if "\`s'" == "missing" {"' _n(2) ///
-	_tab _tab _tab `"count if missing(\`var')"' _n ///
-	_tab _tab _tab `"matrix missing[\`i', \`j'] = \`r(N)'"' _n(2) ///
-	_tab _tab `"}"' _n ///
-	_tab _tab `"else if ustrregexm("\`: type \`var''", "^str") == 0 {"' _n(2) ///
-	_tab _tab _tab `"count if \`var' == \`cond'"' _n ///
-	_tab _tab _tab `"matrix missing[\`i', \`j'] = \`r(N)'"' _n(2) ///
-	_tab _tab `"}"' _n(2) ///
-	_tab `"}"' _n(2) "}" _n(2) ///
-	`"heatplot missing, `skip'"' ///
-	`"ylabel(, labsize(1.5) nogrid) `skip'"' ///
-	`"ysize(9) values(label(missing) format(%1.0f) size(6pt)) legend(off) `skip'"' ///
-	`"title("{bf}Missingness in `framename' Data", pos(11) size(2.75)) `skip'"' ///
-	`"colors(HCL greenorange, intensity(.5) reverse) `skip'"' ///
-	`"p(lc(black) lalign(center) lwidth(thin)) transform(sqrt(@)) `skip'"' ///
-	`"note("N = \`c(N)'", size(8pt)) `skip'"' ///
-	`"name(missingness_`frame', replace)"' _n ///
-	`"graph export `skip'"' ///
-	`""`macval(texdirectory)'/graphs/`frame'/missingness.pdf", `skip'"' ///
-	`"name(missingness_`frame') as(pdf) replace"'
+	_tab `"foreach c in "\`conds'" {"' _n(2) ///
+	_tab _tab `"local ++i"' _n ///
+	_tab _tab `"if ustrregexm("\`: type \`var''", "^str") == 1 & \`i' <= 3 continue"' _n(2) ///
+	_tab _tab `"count if \`c'"' _n ///
+	_tab _tab `"local post = \`r(N)'"' _n(2) ///
+	_tab _tab `"frame post missingness ("\`var'") ("\`: variable label \`var''") ///"' _n ///
+	_tab _tab _tab `"(\`post') (\`i') (\`j') (.) ("") (\`c(N)')"' _n(2) ///
+	_tab _tab `"foreach k in \`enums' {"' _n(2) ///
+	_tab _tab _tab `"count if \`c' & `enum' == \`k'"' _n ///
+	_tab _tab _tab `"local post = \`r(N)'"' _n(2) ///
+	_tab _tab _tab `"count if `enum' == \`k'"' _n ///
+	_tab _tab _tab `"local total_surveys = \`r(N)'"' _n(2) ///
+	_tab _tab _tab `"frame post missingness ("\`var'") ("\`: variable label \`var''") ///"' _n ///
+	_tab _tab _tab _tab `"(\`post') (\`i') (\`j') (\`k') ("\`: label \`vals' \`k''") ///"' _n ///
+	_tab _tab _tab _tab `"(\`total_surveys')"' _n(2) ///
+	_tab _tab `"}"' _n(2) _tab `"}"' _n(2) `"}"' _n(2) ///
+	`"frame missingness { "' _n ///
+	`"	"' _n ///
+	`"	label define type 1 `""Don't Know""' 2 `""Refused""' 3 `""Other (specify)""' ///"' _n ///
+	`"		4 "Missing" 5 "Nonmissing""' _n ///
+	`"	label values type type"' _n(2) ///
+	`"	labmask n, values(varname)"' _n _n ///
+	`"	labmask enum, values(enum_str)"' _n ///
+	`"	bysort type: egen max = max(value)"' _n ///
+	`"	gen relative_rate = value / max"' _n(2) ///
+	`"	egen tag = group(varname)"' _n _n ///
+	`"	label variable relative_rate "Proportion of all submissions""' _n ///
+	`"	sum n"' _n ///
+	`"	local num_vars = \`r(max)'"' _n ///
+	`"	local display_num = 50"' _n ///
+	`"	local rounds = ceil(\`num_vars' / \`display_num')"' _n ///
+	`"	quietly forvalues i = 1/\`rounds' {"' _n _n ///
+	`"		local min = (\`i' * \`display_num') - (\`display_num' - 1)"' _n ///
+	`"		local max = min(\`num_vars', \`min' + (\`display_num' - 1))"' _n ///
+	`"		"' _n ///
+	`"		heatplot relative_rate i.n i.type if inrange(n, \`min', \`max') ///"' _n ///
+	`"			& inrange(type, 1, 4) & missing(enum), ///"' _n ///
+	`"				cuts(0(0.05)1) ///"' _n ///
+	`"				ylabel(, labsize(7pt) nogrid) ///"' _n ///
+	`"				xlabel(, angle(45) labsize(7pt)) ///"' _n ///
+	`"				ysize(7) values(label(value) format(%1.0f) size(6pt)) legend(off) ///"' _n ///
+	`"				title(`"{bf}Missing responses in survey Data"', pos(11) size(2.75)) ///"' _n ///
+	`"				colors(plasma, intensity(.5) reverse) ///"' _n ///
+	`"				p(lc(black) lalign(center) lwidth(thin)) ///"' _n ///
+	`"				name(miss, replace) ///"' _n ///
+	`"				ramp(title("Proportion", size(8pt)) labels(0(.2)1) ///"' _n ///
+	`"				format(%2.1g))"' _n ///
+	`"		graph export "`macval(texdirectory)'/graphs/`frame'/missingness_\`i'.pdf", as(pdf) replace"' _n ///
+	`"				"' _n ///
+	`"	}"' _n ///
+	`"	"' _n ///
+	`"}"' _n _n
+/*
+forvalues j = 1/5 {
+
+	local label : label type `j'
+	preserve
+
+	keep if type == `j' & !missing(enum)
+	if `c(N)' == 0 continue
+
+	heatplot relative_rate i.enum i.n if inrange(n, `min', `max'), ///
+		cuts(0(0.05)1) ///
+		ylabel(, labsize(7pt) nogrid) ///
+		xlabel(, angle(45) labsize(7pt)) ///
+		ysize(7) values(label(value) format(%1.0f) size(6pt)) legend(off) ///
+		title(`"{bf}`label' responses in survey Data"', pos(11) size(2.75)) ///
+		colors(plasma, intensity(.5) reverse) ///
+		p(lc(black) lalign(center) lwidth(thin)) ///
+		name(miss_`i'_`j', replace) ///
+		ramp(title("Proportion", size(8pt)) labels(0(.2)1) ///
+		format(%2.1g))
+
+	graph export ///
+		"/Users/michaelrozelle/Library/CloudStorage/Dropbox/My Mac (Michaels-MBP)/Downloads/example/unops/3.tex/graphs/survey/missingness.pdf", ///
+		name(miss_`i'_`j') as(pdf) replace
+
+	restore
+
+}
+*/
+
+forvalues j = 1/`repeats' {
 	
-file write mytex _n(2) `"\begin{figure}[h!]"' _n ///
-	`"\centering"' _n ///
-	`"\caption{Missingness in `framename'}"' _n ///
-	`"\includegraphics[width=\linewidth, height=\textheight, keepaspectratio]{graphs/`frame'/missingness.pdf}"' _n ///
-	`"\end{figure}"'
+	file write mytex _n(2) `"\begin{figure}[h!]"' _n ///
+		`"\centering"' _n ///
+		`"\caption{Missingness in `framename'}"' _n ///
+		`"\includegraphics[width=\linewidth, height=\textheight, keepaspectratio]{graphs/`frame'/missingness_`j'.pdf}"' _n ///
+		`"\end{figure}"'
 		
+}
+			
 }
 end
