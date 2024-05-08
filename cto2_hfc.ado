@@ -15,13 +15,15 @@ syntax, ///
 	SURVEYNAME(string) /// Name of survey (for document)
 	STATUS(name) /// Survey status variable
 	SUCCESS(numlist) /// Value(s) of status variable indicating successful survey
-	ENUM(name) /// Enumerator name variable
+	ENUM(name) /// Enumerator name variable ///
+	VCETYPE(string) ///
 	[INCLUDE(namelist) /// Specify only the variables you want to include
 	IGNORE(namelist) /// Specify the variables you want to exclude 
 	TREATMENT(name) /// Variable, levels of which correspond to different treatments
 	]
 	
 pause on
+set graphics off
 version 16
 local hbanner = "*" + ("=")* 65
 local lbanner = "*" + ("-") * 65
@@ -175,6 +177,35 @@ file write myfile ///
 	"local" _tab `"today = date(c(current_date), "DMY")"' _n ///
 	"local" _tab `"todaystr=string(\`today', "%td")"' _n(2) ///
 	"`hbanner'" ///
+	_n "* 	Programs for LateX" _n /// 
+	"`hbanner'" _n(2) ///	
+	`"file open mytex using "`macval(texdirectory)'/manuscript.tex", append write"' _n(2) ///
+	`"cap prog drop latex_table"' _n ///
+	`"prog define latex_table "' _n ///
+	`"syntax , TABLE(string) [SIDEWAYS]"' _n ///
+	`"qui {"' _n(2) ///
+	`"if "\`sideways'" != "" local type sidewaystable"' _n ///
+	`"else local type table"' _n(2) ///
+	`"file write mytex _n(2) ///"' _n ///
+	`"	`"\clearpage"' _n ///"' _n ///
+	`"	`"\centering"' _n ///"' _n ///
+	`"	`"\input{\`table'}"' _n ///"' _n ///
+	`"	"' _n ///
+	`"}"' _n ///
+	`"end"' _n(2) ///
+	`"cap prog drop latex_figure"' _n ///
+	`"prog define latex_figure "' _n ///
+	`"syntax , FIGURE(string) CAPTION(string)"' _n ///
+	`"qui {"' _n(2) ///
+	`"file write mytex _n(2) ///"' _n ///
+	`"	`"\clearpage"' _n ///"' _n ///
+	`"   `"\begin{figure}[htbp]"' _n ///"' _n ///
+	`"	`"\caption{\`caption'}"' _n ///"' _n ///
+	`"	`"\includegraphics[width=\linewidth,keepaspectratio]{\`figure'}"' _n ///"' _n ///
+	`"	`"\end{figure}"' _n(2)"' _n(2) ///
+	`"}"' _n ///
+	`"end"' _n(2) ///
+	"`hbanner'" ///
 	_n "* 	Import" _n /// 
 	"`hbanner'" _n(2) ///
 	`"frame create meta"' _n(2) ///
@@ -226,6 +257,7 @@ file write myfile ///
 cap file close mytex
 file open mytex using "`texdirectory'/manuscript.tex", write replace 
 write_preamble, title("`surveyname'") 
+file close mytex 
 	
 *===============================================================================
 * 	Generate Basic Overview Command
@@ -242,8 +274,6 @@ foreach i in 92 35 36 37 38 95 94 123 125 126 {
 gen basic_overview = `"`lbanner'"' ///
                 + "`brek'" + "*" + "`tab'" + varlabel + "`brek'" + ///
 				"`lbanner'" + "`brek2'"
-
-gen tex_gr_basic_overview = ""
 
 forvalues i = 1/`c(N)' {
 	
@@ -316,23 +346,16 @@ foreach r in 0 `replevels' {
 	count if repeat_group == `r'
 	if `r(N)' == 0 continue
 	
-	file write mytex _n(2) `"\newpage"' _n ///
-	`"\section{`r_grouplabel'}"'
-	
 	file write myfile _n(2) "`hbanner'" _n "*" ///
 		_tab "`r_grouplabel'" _n "`hbanner'" ///
-		_n(2) "cwf `r_groupname'"
+		_n(2) "cwf `r_groupname'" _n(2) ///
+		`"file write mytex _n(2) `"\newpage"' _n ///"' _n ///
+		`"`"\section{`r_grouplabel'}"'"'
 		
-	missingness_check, frame(`r_groupname') replevel(`r') ///
-		texdirectory("`macval(texdirectory)'") framename(`r_grouplabel') ///
-		enum(`enum')
-	
-	levelsof row_n if repeat_group == `r' & !missing(tex_gr_basic_overview), clean local(rows)
-	foreach c in `rows' {
-		
-		file write mytex _n(2) (tex_gr_basic_overview[`c'])  "\clearpage"
-
-	}
+	sumstats_check, frame(`r_groupname') replevel(`r') ///
+		texdirectory("`macval(texdirectory)'") treatment(`treatment') ///
+		meta(`meta') metagroups(`meta_groups') metarepeats(`meta_repeats') ///
+		vcetype(`vcetype')
 	
 	levelsof row_n if repeat_group == `r' & !missing(basic_overview), clean local(rows)
 	foreach c in `rows' {
@@ -347,10 +370,10 @@ foreach r in 0 `replevels' {
 	
 }
 
+file write myfile _n(2) ///
+	`"file write mytex _n(2) `"\end{document}"'"' _n ///
+	`"file close mytex"'
 file close myfile
-
-file write mytex _n(2) `"\end{document}"'
-file close mytex 
 
 }
 
@@ -554,14 +577,9 @@ replace basic_overview = basic_overview + ///
 	`"ytitle("Frequency", size(2.5)) `skip'"' + ///
 	`"ylabel(, gmin gmax)"' + ///
 	`"`brek'graph export `skip'"`macval(texdirectory)'/graphs/`rgroup'/`varname'.pdf""' + ///
-	`", `skip' name(`varname') as(pdf) replace"' ///
+	`", `skip' name(`varname') as(pdf) replace`brek'"' + ///
+	`"latex_figure, figure("graphs/`rgroup'/`varname'.pdf") caption("`title'")"' ///
 	in `rownum'
-	
-replace tex_gr_basic_overview = `"`brek2'\begin{figure}[h!]`brek'"' + ///
-	`"\centering`brek'"' + ///
-	`"\caption{`tex_varlabel' [select one]}`brek'"' + ///
-	`"\includegraphics[width=\linewidth, height=\textheight, keepaspectratio]{graphs/`rgroup'/`varname'.pdf}`brek'"' + ///
-	`"\end{figure}"' in `rownum'
 
 }
 }
@@ -634,14 +652,9 @@ else {
 		`"ytitle("Frequency", size(2.5)) `skip'"' + ///
 		`"ylabel(, gmin gmax)"' + ///
 		`"`brek'graph export `skip'"`macval(texdirectory)'/graphs/`rgroup'/`varname'.pdf""' + ///
-		`", `skip' name(`varname') as(pdf) replace"' ///
+		`", `skip' name(`varname') as(pdf) replace`brek'"' + ///
+		`"latex_figure, figure(graphs/`rgroup'/`varname'.pdf) caption(`title')"' ///
 		in `rownum'
-		
-	replace tex_gr_basic_overview = `"`brek2'\begin{figure}[h!]`brek'"' + ///
-	`"\centering`brek'"' + ///
-	`"\caption{`tex_varlabel' [select multiple]}`brek'"' + ///
-	`"\includegraphics[width=\linewidth, height=\textheight, keepaspectratio]{graphs/`rgroup'/`varname'.pdf}`brek'"' + ///
-	`"\end{figure}"' in `rownum'
 		
 }
 	
@@ -650,8 +663,7 @@ end
 
 cap prog drop missingness_check
 program define missingness_check 
-syntax, FRAME(string) REPLEVEL(integer) TEXDIRECTORY(string) FRAMENAME(string) ///
-	ENUM(string)
+syntax, TEXDIRECTORY(string) ENUM(string)
 qui {
 	
 local hbanner = "*" + ("=")* 65
@@ -668,16 +680,42 @@ foreach thing in brek tab {
 	}
 	
 }
+	
+foreach r in 0 `replevels' {
+	
+	if `r' == 0 {
+		
+		local r_groupname survey
+		local r_grouplabel Survey-Level
+		
+	}
+	else {
+		
+ 		frame `meta_repeats' { 
+			
+			levelsof name if index == `r', clean local(r_groupname)
+			levelsof label if index == `r', clean local(r_grouplabel)
+			
+		}
+		
+	}
 			
 count if repeat_group == `replevel'
 local repeats = ceil(`r(N)' / 50)
 
 file write myfile _n(2) `"`lbanner'"' _n ///
     "*" _tab "Missingness" _n ///
-	"`lbanner'" _n(2) ///
-	`"cap frame drop missingness"' _n ///
+	"`lbanner'"
+	
+if `replevel' == 0 {
+	
+	file write myfile _n(2) `"cap frame drop missingness"' _n ///
 	`"frame create missingness strL varname strL varlabel int value int type int n ///"' _n ///
-	_tab `"int enum strL enum_str int total_surveys"' _n(2) ///
+	_tab `"int enum strL enum_str int total_surveys int repeat_group"'
+	
+}
+
+file write myfile _n(2) ///
 	`"frame meta: valuesof name if repeat_group == `replevel' & `skip'"' ///
 	`"question_type != 3 | question_type == 3 & within_order == 1"' _n ///
 	`"local wanted_varlist \`r(values)'"' _n ///
@@ -704,7 +742,7 @@ file write myfile _n(2) `"`lbanner'"' _n ///
 	_tab _tab `"count if \`c'"' _n ///
 	_tab _tab `"local post = \`r(N)'"' _n(2) ///
 	_tab _tab `"frame post missingness ("\`var'") ("\`: variable label \`var''") ///"' _n ///
-	_tab _tab _tab `"(\`post') (\`i') (\`j') (.) ("") (\`c(N)')"' _n(2) ///
+	_tab _tab _tab `"(\`post') (\`i') (\`j') (.) ("") (\`c(N)') (`replevel')"' _n(2) ///
 	_tab _tab `"foreach k in \`enums' {"' _n(2) ///
 	_tab _tab _tab `"count if \`c' & `enum' == \`k'"' _n ///
 	_tab _tab _tab `"local post = \`r(N)'"' _n(2) ///
@@ -713,43 +751,44 @@ file write myfile _n(2) `"`lbanner'"' _n ///
 	_tab _tab _tab `"frame post missingness ("\`var'") ("\`: variable label \`var''") ///"' _n ///
 	_tab _tab _tab _tab `"(\`post') (\`i') (\`j') (\`k') ("\`: label \`vals' \`k''") ///"' _n ///
 	_tab _tab _tab _tab `"(\`total_surveys')"' _n(2) ///
-	_tab _tab `"}"' _n(2) _tab `"}"' _n(2) `"}"' _n(2) ///
-	`"frame missingness { "' _n ///
-	`"	"' _n ///
-	`"	label define type 1 `""Don't Know""' 2 `""Refused""' 3 `""Other (specify)""' ///"' _n ///
-	`"		4 "Missing" 5 "Nonmissing""' _n ///
-	`"	label values type type"' _n(2) ///
-	`"	labmask n, values(varname)"' _n _n ///
-	`"	labmask enum, values(enum_str)"' _n ///
-	`"	bysort type: egen max = max(value)"' _n ///
-	`"	gen relative_rate = value / max"' _n(2) ///
-	`"	egen tag = group(varname)"' _n _n ///
-	`"	label variable relative_rate "Proportion of all submissions""' _n ///
-	`"	sum n"' _n ///
-	`"	local num_vars = \`r(max)'"' _n ///
-	`"	local display_num = 50"' _n ///
-	`"	local rounds = ceil(\`num_vars' / \`display_num')"' _n ///
-	`"	quietly forvalues i = 1/\`rounds' {"' _n _n ///
-	`"		local min = (\`i' * \`display_num') - (\`display_num' - 1)"' _n ///
-	`"		local max = min(\`num_vars', \`min' + (\`display_num' - 1))"' _n ///
-	`"		"' _n ///
-	`"		heatplot relative_rate i.n i.type if inrange(n, \`min', \`max') ///"' _n ///
-	`"			& inrange(type, 1, 4) & missing(enum), ///"' _n ///
-	`"				cuts(0(0.05)1) ///"' _n ///
-	`"				ylabel(, labsize(7pt) nogrid) ///"' _n ///
-	`"				xlabel(, angle(45) labsize(7pt)) ///"' _n ///
-	`"				ysize(7) values(label(value) format(%1.0f) size(6pt)) legend(off) ///"' _n ///
-	`"				title(`"{bf}Missing responses in survey Data"', pos(11) size(2.75)) ///"' _n ///
-	`"				colors(plasma, intensity(.5) reverse) ///"' _n ///
-	`"				p(lc(black) lalign(center) lwidth(thin)) ///"' _n ///
-	`"				name(miss, replace) ///"' _n ///
-	`"				ramp(title("Proportion", size(8pt)) labels(0(.2)1) ///"' _n ///
-	`"				format(%2.1g))"' _n ///
-	`"		graph export "`macval(texdirectory)'/graphs/`frame'/missingness_\`i'.pdf", as(pdf) replace"' _n ///
-	`"				"' _n ///
-	`"	}"' _n ///
-	`"	"' _n ///
-	`"}"' _n _n
+	_tab _tab `"}"' _n(2) _tab `"}"' _n(2) `"}"'
+	
+// 	`"frame missingness { "' _n ///
+// 	`"	"' _n ///
+// 	`"	label define type 1 `""Don't Know""' 2 `""Refused""' 3 `""Other (specify)""' ///"' _n ///
+// 	`"		4 "Missing" 5 "Nonmissing""' _n ///
+// 	`"	label values type type"' _n(2) ///
+// 	`"	labmask n, values(varname)"' _n _n ///
+// 	`"	labmask enum, values(enum_str)"' _n ///
+// 	`"	bysort type: egen max = max(value)"' _n ///
+// 	`"	gen relative_rate = value / max"' _n(2) ///
+// 	`"	egen tag = group(varname)"' _n _n ///
+// 	`"	label variable relative_rate "Proportion of all submissions""' _n ///
+// 	`"	sum n"' _n ///
+// 	`"	local num_vars = \`r(max)'"' _n ///
+// 	`"	local display_num = 50"' _n ///
+// 	`"	local rounds = ceil(\`num_vars' / \`display_num')"' _n ///
+// 	`"	quietly forvalues i = 1/\`rounds' {"' _n _n ///
+// 	`"		local min = (\`i' * \`display_num') - (\`display_num' - 1)"' _n ///
+// 	`"		local max = min(\`num_vars', \`min' + (\`display_num' - 1))"' _n ///
+// 	`"		"' _n ///
+// 	`"		heatplot relative_rate i.n i.type if inrange(n, \`min', \`max') ///"' _n ///
+// 	`"			& inrange(type, 1, 4) & missing(enum), ///"' _n ///
+// 	`"				cuts(0(0.05)1) ///"' _n ///
+// 	`"				ylabel(, labsize(7pt) nogrid) ///"' _n ///
+// 	`"				xlabel(, angle(45) labsize(7pt)) ///"' _n ///
+// 	`"				ysize(7) values(label(value) format(%1.0f) size(6pt)) legend(off) ///"' _n ///
+// 	`"				title(`"{bf}Missing responses in survey Data"', pos(11) size(2.75)) ///"' _n ///
+// 	`"				colors(plasma, intensity(.5) reverse) ///"' _n ///
+// 	`"				p(lc(black) lalign(center) lwidth(thin)) ///"' _n ///
+// 	`"				name(miss, replace) ///"' _n ///
+// 	`"				ramp(title("Proportion", size(8pt)) labels(0(.2)1) ///"' _n ///
+// 	`"				format(%2.1g))"' _n ///
+// 	`"		graph export "`macval(texdirectory)'/graphs/`frame'/missingness_\`i'.pdf", as(pdf) replace"' _n ///
+// 	`"				"' _n ///
+// 	`"	}"' _n ///
+// 	`"	"' _n ///
+// 	`"}"' _n _n
 /*
 forvalues j = 1/5 {
 
@@ -780,15 +819,153 @@ forvalues j = 1/5 {
 }
 */
 
-forvalues j = 1/`repeats' {
-	
-	file write mytex _n(2) `"\begin{figure}[h!]"' _n ///
-		`"\centering"' _n ///
-		`"\caption{Missingness in `framename'}"' _n ///
-		`"\includegraphics[width=\linewidth, height=\textheight, keepaspectratio]{graphs/`frame'/missingness_`j'.pdf}"' _n ///
-		`"\end{figure}"'
-		
-}
+// forvalues j = 1/`repeats' {
+//	
+// 	file write mytex _n(2) `"\begin{figure}[h!]"' _n ///
+// 		`"\centering"' _n ///
+// 		`"\caption{Missingness in `framename'}"' _n ///
+// 		`"\includegraphics[width=\linewidth, height=\textheight, keepaspectratio]{graphs/`frame'/missingness_`j'.pdf}"' _n ///
+// 		`"\end{figure}"'
+//		
+// }
 			
 }
+end
+
+cap prog drop sumstats_check 
+prog define sumstats_check 
+syntax , FRAME(string) REPLEVEL(integer) TEXDIRECTORY(string) ///
+	TREATMENT(string) META(string) METAREPEATS(string) METAGROUPS(string) ///
+	VCETYPE(string)
+qui {
+
+local hbanner = "*" + ("=")* 65
+local lbanner = "*" + ("-") * 65
+local brek = char(10)
+local tab = char(9)
+local skip = "///" + char(10) + char(9)
+local dol = char(36)
+foreach thing in brek tab {
+	
+	forvalues z = 2/3 {
+	
+		local `thing'`z' = `z' * "``thing''"
+	
+	}
+	
+}
+
+levelsof group if repeat_group == `replevel', clean local(groups)
+foreach g in `groups' {
+	
+	cwf `meta'
+	local grouplabel : label group_label `g'
+		
+	if `replevel' > 0 {
+			
+		frame `metarepeats': levelsof name if index == `replevel', clean local(frame)
+		
+	}
+	else local frame survey
+	
+	frame `metagroups': levelsof name if index == `g', clean local(groupname)
+	if "`groupname'" == "" local groupname unnamed_group
+	
+	frame `meta' { 
+		
+		valuesof name if group == `g' & repeat_group == `replevel' ///
+			& preloaded == 0 & !inlist(question_type, 1, 5, 6) ///
+			& !(within_order == 1 & question_type == 3)
+		local table `r(values)'
+		
+	}
+	
+	frame `frame' {
+		
+		local groupvars
+		local passthru
+		foreach var of varlist `table' {
+			
+			levelsof `treatment' if !missing(`var')
+			if `r(r)' == 2 local passthru `passthru' `var'
+			
+			count if !missing(`var')
+			if `r(N)' > 0 local groupvars `groupvars' `var'
+			
+		}
+		
+	}
+	
+	if "`groupvars'" != "" {
+	
+	file write myfile _n(2) `"`hbanner'"' _n `"*"' _tab `"`grouplabel'"' _n ///
+		`"`hbanner'"' _n(2) ///
+		`"`lbanner'"' _n `"*"' _tab `"Summary Statistics"' _n ///
+		`"`lbanner'"' _n(2) ///
+		`"local groupvars `groupvars'"' _n(2) ///
+		`"est clear"' _n ///
+		`"estpost tabstat \`groupvars', ///"' _n ///
+		`"	c(stat) stat(mean sd min max n)"' _n ///
+		`"esttab using "`macval(texdirectory)'/tables/`frame'/`groupname'_totsum.tex", replace ///"' _n ///
+		`"	cells("mean(fmt(2)) sd(fmt(2)) min(fmt(0)) max(fmt(0)) count(fmt(0))") ///"' _n ///
+		`"	nostar unstack nonumber ///"' _n ///
+		`"	compress nomtitle nonote noobs label booktabs ///"' _n ///
+		`"	title("`grouplabel' Headline Summary Statistics") ///"' _n ///
+		`"	collabels("Mean" "SD" "Min" "Max" "N")"' _n ///
+		`"latex_table, table("tables/`frame'/`groupname'_totsum.tex")"'
+		
+	}
+	
+	if "`passthru'" != "" {
+	
+		file write myfile _n(2) ///
+		`"local table `passthru'"' _n(2) ///
+		`"	est clear"' _n ///
+		`"		estpost ttest \`table', by(`treatment')"' _n ///
+		`"		esttab using "`macval(texdirectory)'/tables/`frame'/`groupname'.tex", replace ///"' _n ///
+		`"		cells("mu_1(fmt(2)) mu_2(fmt(2))  b(star) se(par) count(fmt(0))") ///"' _n ///
+		`"		collabels("Control" "Treatment" "Diff. (Control - Treatment)" "s.e." "obs." ) ///"' _n ///
+		`"		star(* 0.10 ** 0.05 *** 0.01) ///"' _n ///
+		`"		label booktabs nonum gaps noobs compress ///"' _n ///
+		`"		title("`grouplabel' Summary Statistics across Treatments")"' _n(2) ///
+		`"latex_table, table("tables/`frame'/`groupname'.tex")"' _n(2) ///
+		`"local modelnames"' _n ///
+		`"est clear"' _n ///
+		`"foreach o in \`table' {"' _n(2) ///
+		`"	eststo: reg \`o' i.`treatment', vce(`vcetype')"' _n(2) ///
+		`"	sum \`o' if `treatment' == 0"' _n ///
+		`"	local ctlm : display %3.2fc \`r(mean)'"' _n ///
+		`"	estadd local ctlm \`ctlm'"' _n(2) ///
+		`"	sum \`o' if `treatment' == 1"' _n ///
+		`"	local trtm : display %3.2fc \`r(mean)'"' _n ///
+		`"	estadd local trtm \`trtm'"' _n(2) ///
+		`"	local varlabel : variable label \`o'"' _n ///
+		`"	local varlabel = proper(strtrim(stritrim("\`varlabel'")))"' _n ///
+		`"	local varlabel = ustrregexra("\`varlabel'", "(.{10,}?)\s", "\$1 \\\\")"' _n ///
+		`"	local mlabel \shortstack{\`varlabel'}"' _n(2) ///
+		`"	local modelnames `"\`modelnames' "\`mlabel'""'"' _n(2) ///
+		`"}"' _n _n ///
+		`"esttab using "`macval(texdirectory)'/tables/`frame'/`groupname'_teffects.tex", ///"' _n ///
+		`"		b(3) se(3) ///"' _n ///
+		`"		keep(1.`treatment') ///"' _n ///
+		`"		star(* 0.10 ** 0.05 *** 0.01) ///"' _n ///
+		`"		scalars( ///"' _n ///
+		`"		"ctlm Mean in Control" ///"' _n ///
+		`"		"trtm Mean in Treatment" ///"' _n ///
+		`"		"N No. of Observations" "r2 \\`macval(dol)'R^2\\`macval(dol)'") ///"' _n ///
+		`"		sfmt(%10.2f %10.2f  %10.0f %10.2f) ///"' _n ///
+		`"		coef(1.`treatment' "Treatment") ///"' _n ///
+		`"		mtitle(\`modelnames') ///"' _n ///
+		`"		title("`grouplabel' Treatment Effects") ///"' _n ///
+		`"		label booktabs noobs nonotes collabels(none) compress replace"' _n ///
+		`"latex_table, table("tables/`frame'/`groupname'_teffects.tex")"'
+		
+	}
+	
+}
+	
+set graphics on 
+	
+}
+
 end
