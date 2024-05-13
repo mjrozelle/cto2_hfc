@@ -15,9 +15,11 @@ syntax, ///
 	SURVEYNAME(string) /// Name of survey (for document)
 	STATUS(name) /// Survey status variable
 	SUCCESS(numlist) /// Value(s) of status variable indicating successful survey
-	ENUM(name) /// Enumerator name variable ///
+	ENUM(name) /// Enumerator name variable
+	[ ///
+	REGRESS ///
 	VCETYPE(string) ///
-	[INCLUDE(namelist) /// Specify only the variables you want to include
+	INCLUDE(namelist) /// Specify only the variables you want to include
 	IGNORE(namelist) /// Specify the variables you want to exclude 
 	TREATMENT(name) /// Variable, levels of which correspond to different treatments
 	]
@@ -355,7 +357,7 @@ foreach r in 0 `replevels' {
 	sumstats_check, frame(`r_groupname') replevel(`r') ///
 		texdirectory("`macval(texdirectory)'") treatment(`treatment') ///
 		meta(`meta') metagroups(`meta_groups') metarepeats(`meta_repeats') ///
-		vcetype(`vcetype')
+		vcetype(`vcetype') `regress'
 	
 	levelsof row_n if repeat_group == `r' & !missing(basic_overview), clean local(rows)
 	foreach c in `rows' {
@@ -836,7 +838,7 @@ cap prog drop sumstats_check
 prog define sumstats_check 
 syntax , FRAME(string) REPLEVEL(integer) TEXDIRECTORY(string) ///
 	TREATMENT(string) META(string) METAREPEATS(string) METAGROUPS(string) ///
-	VCETYPE(string)
+	VCETYPE(string) [REGRESS]
 qui {
 
 local hbanner = "*" + ("=")* 65
@@ -916,49 +918,49 @@ foreach g in `groups' {
 		
 	}
 	
-	if "`passthru'" != "" {
+	if "`passthru'" != "" & "`regress'" != "" {
 	
 		file write myfile _n(2) ///
-		`"local table `passthru'"' _n(2) ///
-		`"	est clear"' _n ///
-		`"		estpost ttest \`table', by(`treatment')"' _n ///
-		`"		esttab using "`macval(texdirectory)'/tables/`frame'/`groupname'.tex", replace ///"' _n ///
-		`"		cells("mu_1(fmt(2)) mu_2(fmt(2))  b(star) se(par) count(fmt(0))") ///"' _n ///
-		`"		collabels("Control" "Treatment" "Diff. (Control - Treatment)" "s.e." "obs." ) ///"' _n ///
-		`"		star(* 0.10 ** 0.05 *** 0.01) ///"' _n ///
-		`"		label booktabs nonum gaps noobs compress ///"' _n ///
-		`"		title("`grouplabel' Summary Statistics across Treatments")"' _n(2) ///
-		`"latex_table, table("tables/`frame'/`groupname'.tex")"' _n(2) ///
-		`"local modelnames"' _n ///
-		`"est clear"' _n ///
-		`"foreach o in \`table' {"' _n(2) ///
-		`"	eststo: reg \`o' i.`treatment', vce(`vcetype')"' _n(2) ///
-		`"	sum \`o' if `treatment' == 0"' _n ///
-		`"	local ctlm : display %3.2fc \`r(mean)'"' _n ///
-		`"	estadd local ctlm \`ctlm'"' _n(2) ///
-		`"	sum \`o' if `treatment' == 1"' _n ///
-		`"	local trtm : display %3.2fc \`r(mean)'"' _n ///
-		`"	estadd local trtm \`trtm'"' _n(2) ///
-		`"	local varlabel : variable label \`o'"' _n ///
-		`"	local varlabel = proper(strtrim(stritrim("\`varlabel'")))"' _n ///
-		`"	local varlabel = ustrregexra("\`varlabel'", "(.{10,}?)\s", "\$1 \\\\")"' _n ///
-		`"	local mlabel \shortstack{\`varlabel'}"' _n(2) ///
-		`"	local modelnames `"\`modelnames' "\`mlabel'""'"' _n(2) ///
-		`"}"' _n _n ///
-		`"esttab using "`macval(texdirectory)'/tables/`frame'/`groupname'_teffects.tex", ///"' _n ///
-		`"		b(3) se(3) ///"' _n ///
-		`"		keep(1.`treatment') ///"' _n ///
-		`"		star(* 0.10 ** 0.05 *** 0.01) ///"' _n ///
-		`"		scalars( ///"' _n ///
-		`"		"ctlm Mean in Control" ///"' _n ///
-		`"		"trtm Mean in Treatment" ///"' _n ///
-		`"		"N No. of Observations" "r2 \\`macval(dol)'R^2\\`macval(dol)'") ///"' _n ///
-		`"		sfmt(%10.2f %10.2f  %10.0f %10.2f) ///"' _n ///
-		`"		coef(1.`treatment' "Treatment") ///"' _n ///
-		`"		mtitle(\`modelnames') ///"' _n ///
-		`"		title("`grouplabel' Treatment Effects") ///"' _n ///
-		`"		label booktabs noobs nonotes collabels(none) compress replace"' _n ///
-		`"latex_table, table("tables/`frame'/`groupname'_teffects.tex")"'
+			`"local table `passthru'"' _n(2) ///
+			`"	est clear"' _n ///
+			`"		estpost ttest \`table', by(`treatment')"' _n ///
+			`"		esttab using "`macval(texdirectory)'/tables/`frame'/`groupname'.tex", replace ///"' _n ///
+			`"		cells("mu_1(fmt(2)) mu_2(fmt(2))  b(star) se(par) count(fmt(0))") ///"' _n ///
+			`"		collabels("Control" "Treatment" "Diff. (Control - Treatment)" "s.e." "obs." ) ///"' _n ///
+			`"		star(* 0.10 ** 0.05 *** 0.01) ///"' _n ///
+			`"		label booktabs nonum gaps noobs compress ///"' _n ///
+			`"		title("`grouplabel' Summary Statistics across Treatments")"' _n(2) ///
+			`"latex_table, table("tables/`frame'/`groupname'.tex")"' _n(2) ///
+			`"local modelnames"' _n ///
+			`"est clear"' _n ///
+			`"foreach o in \`table' {"' _n(2) ///
+			`"	eststo: reg \`o' i.`treatment', vce(`vcetype')"' _n(2) ///
+			`"	sum \`o' if `treatment' == 0"' _n ///
+			`"	local ctlm : display %3.2fc \`r(mean)'"' _n ///
+			`"	estadd local ctlm \`ctlm'"' _n(2) ///
+			`"	sum \`o' if `treatment' == 1"' _n ///
+			`"	local trtm : display %3.2fc \`r(mean)'"' _n ///
+			`"	estadd local trtm \`trtm'"' _n(2) ///
+			`"	local varlabel : variable label \`o'"' _n ///
+			`"	local varlabel = proper(strtrim(stritrim("\`varlabel'")))"' _n ///
+			`"	local varlabel = ustrregexra("\`varlabel'", "(.{10,}?)\s", "\$1 \\\\")"' _n ///
+			`"	local mlabel \shortstack{\`varlabel'}"' _n(2) ///
+			`"	local modelnames `"\`modelnames' "\`mlabel'""'"' _n(2) ///
+			`"}"' _n _n ///
+			`"esttab using "`macval(texdirectory)'/tables/`frame'/`groupname'_teffects.tex", ///"' _n ///
+			`"		b(3) se(3) ///"' _n ///
+			`"		keep(1.`treatment') ///"' _n ///
+			`"		star(* 0.10 ** 0.05 *** 0.01) ///"' _n ///
+			`"		scalars( ///"' _n ///
+			`"		"ctlm Mean in Control" ///"' _n ///
+			`"		"trtm Mean in Treatment" ///"' _n ///
+			`"		"N No. of Observations" "r2 \\`macval(dol)'R^2\\`macval(dol)'") ///"' _n ///
+			`"		sfmt(%10.2f %10.2f  %10.0f %10.2f) ///"' _n ///
+			`"		coef(1.`treatment' "Treatment") ///"' _n ///
+			`"		mtitle(\`modelnames') ///"' _n ///
+			`"		title("`grouplabel' Treatment Effects") ///"' _n ///
+			`"		label booktabs noobs nonotes collabels(none) compress replace"' _n ///
+			`"latex_table, table("tables/`frame'/`groupname'_teffects.tex")"'
 		
 	}
 	
