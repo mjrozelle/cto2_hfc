@@ -76,31 +76,29 @@ frame `meta_repeats' {
 	use "`savefolder'/group_metadata.dta", clear
 	keep if type == 2 & repetitions > 0
 	
+	gen frames = ustrregexra(keys, "_key\b", "", .)
+	replace frames = ustrregexra(frames, "\bkey\b", "survey", .)
+	gen len = strlen(word(frames, -1))
+	replace frames = substr(frames, 1, strlen(frames) - len)
+	replace frames = strtrim(stritrim(frames))
+	drop len
+	
 	local num_repeats = `c(N)'
 	local num_levels = `num_repeats' + 1
 	
 	forvalues i = 0/`num_repeats' {
 		
 		local linkframes
-		local all_keys key
-		if `i' == 0 local frame survey 
+		
+		if `i' == 0 {
+			
+			local frame survey 
+			
+		}
 		else {
 			
 			local frame = name[`i']
-			local layers = layers_nested[`i']
-			
-			forvalues j = `layers'(-1)0 {
-				
-				if `j' == 0 local linkframes survey `linkframes'
-				else { 
-					
-					local nextframe = nest_level_`j'[`i']
-					levelsof name if index == `nextframe', local(nf_name) clean
-					local linkframes `nf_name' `linkframes'
-					
-				}
-				
-			}
+			local linkframes = frames[`i']
 			
 		}
 		
@@ -112,8 +110,19 @@ frame `meta_repeats' {
 			
 			foreach f in `linkframes' {
 				
-				if "`f'" != "survey" local all_keys `all_keys' `f'_key
-				frlink m:1 `all_keys', frame(``f'')
+				if "`f'" == "survey" {
+					
+					local keys key 
+					
+				}
+				else frame `meta_repeats' { 
+					
+					levelsof index if name == "`f'", clean local(j)
+					local keys = keys[`j']
+					
+				}
+
+				frlink m:1 `keys', frame(``f'')
 				
 			}
 		
@@ -218,36 +227,43 @@ file write myfile ///
 	_tab `"keep if type == 1"' _n(2) "}" _n(2) ///
 	`"frame create meta_repeats"' _n ///
 	`"frame meta_repeats {"' _n(2) ///
-	_tab `"use "`macval(savefolder)'/group_metadata.dta", clear"' _n ///
-	_tab `"keep if type == 2 & repetitions > 0"' _n(2) ///
-	_tab `"local num_repeats = \`c(N)'"' _n ///
-	_tab `"local num_levels = \`num_repeats' + 1"' _n(2) ///
-	_tab `"forvalues i = 0/\`num_repeats' {"' _n(2) ///
-	_tab _tab `"local linkframes"' _n ///
-	_tab _tab `"local all_keys key"' _n(2) ///
-	_tab _tab `"if \`i' == 0 local frame survey"' _n ///
-	_tab _tab `"else {"' _n(2) ///
-	_tab _tab _tab `"local frame = name[\`i']"' _n ///
-	_tab _tab _tab `"local layers = layers_nested[\`i']"' _n(2) ///
-	_tab _tab _tab `"forvalues j = \`layers'(-1)0 {"' _n(2) ///
-	_tab _tab _tab _tab `"if \`j' == 0 local linkframes survey \`linkframes'"' _n ///
-	_tab _tab _tab _tab `"else {"' _n(2) ///
-	_tab _tab _tab _tab _tab `"local nextframe = nest_level_\`j'[\`i']"' _n ///
-	_tab _tab _tab _tab _tab `"levelsof name if index == \`nextframe', local(nf_name) clean"' _n ///
-	_tab _tab _tab _tab _tab `"local linkframes \`nf_name' \`linkframes'"' _n(2) ///
-	_tab _tab _tab _tab `"}"' _n(2) ///
-	_tab _tab _tab `"}"' _n(2) ///
-	_tab _tab `"}"' _n(2) ///
-	_tab _tab `"frame create \`frame'"' _n ///
-	_tab _tab `"frame \`frame' {"' _n(2) ///
-	_tab _tab _tab `"use "`macval(savefolder)'/\`frame'.dta", clear"' _n ///
-	_tab _tab _tab `"foreach f in \`linkframes' {"' _n(2) ///
-	_tab _tab _tab _tab `"if "\`f'" != "survey" local all_keys \`all_keys' \`f'_key"' _n ///
-	_tab _tab _tab _tab `"frlink m:1 \`all_keys', frame(\`f')"' _n(2) ///
-	_tab _tab _tab `"}"' _n(2) ///
-	_tab _tab `"}"' _n(2) ///
-	_tab `"}"' _n(2) ///
-	`"}"' _n(2) ///
+	`"	use "`macval(savefolder)'/group_metadata.dta", clear"' _n ///
+	`"	keep if type == 2 & repetitions > 0"' _n(2) ///
+	`"	gen frames = ustrregexra(keys, "_key\b", "", .)"' _n ///
+	`"	replace frames = ustrregexra(frames, "\bkey\b", "survey", .)"' _n ///
+	`"	gen len = strlen(word(frames, -1))"' _n ///
+	`"	replace frames = substr(frames, 1, strlen(frames) - len)"' _n ///
+	`"	replace frames = strtrim(stritrim(frames))"' _n ///
+	`"	drop len"' _n(2) ///
+	`"	local num_repeats = \`c(N)'"' _n ///
+	`"	local num_levels = \`num_repeats' + 1"' _n(2) ///
+	`"	forvalues i = 0/\`num_repeats' {"' _n(2) ///
+	`"		local linkframes"' _n(2) ///
+	`"		if \`i' == 0 {"' _n(2) ///
+	`"			local frame survey "' _n(2) ///
+	`"		}"' _n ///
+	`"		else {"' _n(2) ///
+	`"			local frame = name[\`i']"' _n ///
+	`"			local linkframes = frames[\`i']"' _n(2) ///
+	`"		}"' _n(2) ///	
+	`"		frame create \`frame'"' _n ///
+	`"		frame \`frame' { "' _n(2) ///
+	`"			use "`macval(savefolder)'/\`frame'.dta", clear"' _n(2) ///
+	`"			foreach f in \`linkframes' {"' _n(2) ///
+	`"				if "\`f'" == "survey" {"' _n(2) ///
+	`"					local keys key "' _n(2) ///
+	`"				}"' _n ///
+	`"				else frame meta_repeats { "' _n(2) ///
+	`"					levelsof index if name == "\`f'", clean local(j)"' _n ///
+	`"					local keys = keys[\`j']"' _n(2) ///
+	`"				}"' _n(2) ///
+	`"				frlink m:1 \`keys', frame(\`f')"' _n(2) ///
+	`"			}"' _n(2) ///
+	`"		}"' _n(2) ///
+	`"	}"' _n(2) ///
+	`"	valuesof index "' _n ///
+	`"	local replevels \`r(values)'"' _n(2) ///
+	`"} "' _n(2) ///
 	`"cwf meta"' _n `"use "`macval(savefolder)'/survey_metadata.dta", clear"' _n(2) ///
 	`"frlink m:1 repeat_group, frame(meta_repeats index)"' _n ///
 	`"frlink m:1 group, frame(meta_groups index)"' _n(2) ///
@@ -895,9 +911,10 @@ foreach g in `groups' {
 			& preloaded == 0 & !inlist(question_type, 1, 5, 6) ///
 			& !(within_order == 1 & question_type == 3)
 		local table `r(values)'
+		if "`table'" == "" continue
 		
 	}
-	
+
 	frame `frame' {
 		
 		local groupvars
@@ -1053,7 +1070,7 @@ foreach r in `replevels' {
 		`"}"' _n(2) ///
 		`"frame copy `frame' \`check_frame'"' _n ///
 		`"frame \`check_frame' {"' _n(2) ///
-		`"	collapse (max) repeats = `frame'_key (firstnm) `enum', by(`keys')"' _n(2) ///
+		`"	collapse (max) repeats = `frame'_key (firstnm) `enum', by(key)"' _n(2) ///
 		`"}"' _n(2) ///
 		`"frame \`enumerators' {"' _n(2) ///
 		`"	frlink 1:1 key, frame(\`check_frame')"' _n ///
