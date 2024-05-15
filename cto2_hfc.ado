@@ -16,6 +16,7 @@ syntax, ///
 	STATUS(name) /// Survey status variable
 	SUCCESS(numlist) /// Value(s) of status variable indicating successful survey
 	ENUM(name) /// Enumerator name variable
+	TEAM(name) ///
 	[ ///
 	REGRESS ///
 	VCETYPE(string) ///
@@ -266,10 +267,18 @@ file close mytex
 *===============================================================================
 
 clonevar tex_varlabel = varlabel
+clonevar semitex_varlabel = varlabel
 replace tex_varlabel = ustrto(tex_varlabel, "ascii", 1)
 foreach i in 92 35 36 37 38 95 94 123 125 126 {
 
 	replace tex_varlabel = subinstr(tex_varlabel, `"`=char(`i')'"', `"\\`=char(`i')'"', .)
+	
+}
+
+
+foreach i in 35 123 125 {
+
+	replace semitex_varlabel = subinstr(semitex_varlabel, `"`=char(`i')'"', `"\\`=char(`i')'"', .)
 	
 }
 
@@ -282,7 +291,7 @@ forvalues i = 1/`c(N)' {
 	local type = question_type[`i']
 	local repeat = repeat_group[`i']
 	local name = name[`i']
-	local label = varlabel[`i']
+	local label = tex_varlabel[`i']
 	
 	if `repeat' == 0 {
 		
@@ -326,6 +335,11 @@ forvalues i = 1/`c(N)' {
 
 }
 
+// produce graphs and tables on enum performance
+enum_performance, replevels(`replevels') texdirectory("`macval(texdirectory)'") ///
+	meta(`meta') metarepeats(`meta_repeats') metagroups(`meta_groups') ///
+	enum(`enum') status(`status') success(`success') team(`team')
+
 foreach r in 0 `replevels' {
 	
 	if `r' == 0 {
@@ -355,9 +369,9 @@ foreach r in 0 `replevels' {
 		`"`"\section{`r_grouplabel'}"'"'
 		
 	sumstats_check, frame(`r_groupname') replevel(`r') ///
-		texdirectory("`macval(texdirectory)'") treatment(`treatment') ///
+		texdirectory("`macval(texdirectory)'") ///
 		meta(`meta') metagroups(`meta_groups') metarepeats(`meta_repeats') ///
-		vcetype(`vcetype') `regress'
+		// treatment(`treatment') vcetype(`vcetype') `regress'
 	
 	levelsof row_n if repeat_group == `r' & !missing(basic_overview), clean local(rows)
 	foreach c in `rows' {
@@ -376,6 +390,8 @@ file write myfile _n(2) ///
 	`"file write mytex _n(2) `"\end{document}"'"' _n ///
 	`"file close mytex"'
 file close myfile
+
+set graphics on 
 
 }
 
@@ -837,8 +853,8 @@ end
 cap prog drop sumstats_check 
 prog define sumstats_check 
 syntax , FRAME(string) REPLEVEL(integer) TEXDIRECTORY(string) ///
-	TREATMENT(string) META(string) METAREPEATS(string) METAGROUPS(string) ///
-	VCETYPE(string) [REGRESS]
+	META(string) METAREPEATS(string) METAGROUPS(string) ///
+	[TREATMENT(string) VCETYPE(string) REGRESS]
 qui {
 
 local hbanner = "*" + ("=")* 65
@@ -888,8 +904,12 @@ foreach g in `groups' {
 		local passthru
 		foreach var of varlist `table' {
 			
-			levelsof `treatment' if !missing(`var')
-			if `r(r)' == 2 local passthru `passthru' `var'
+			if "`treatment'" != "" {
+			
+				levelsof `treatment' if !missing(`var')
+				if `r(r)' == 2 local passthru `passthru' `var'
+				
+			}
 			
 			count if !missing(`var')
 			if `r(N)' > 0 local groupvars `groupvars' `var'
@@ -899,6 +919,15 @@ foreach g in `groups' {
 	}
 	
 	if "`groupvars'" != "" {
+		
+		local coefs
+		
+		foreach var in `groupvars' {
+			
+			levelsof semitex_varlabel if name == "`var'", clean local(coef)
+			local coefs `"`coefs' ///`brek'`tab' `var' `"`macval(coef)'"'"'
+			
+		}
 	
 	file write myfile _n(2) `"`hbanner'"' _n `"*"' _tab `"`grouplabel'"' _n ///
 		`"`hbanner'"' _n(2) ///
@@ -911,6 +940,7 @@ foreach g in `groups' {
 		`"esttab using "`macval(texdirectory)'/tables/`frame'/`groupname'_totsum.tex", replace ///"' _n ///
 		`"	cells("mean(fmt(2)) sd(fmt(2)) min(fmt(0)) max(fmt(0)) count(fmt(0))") ///"' _n ///
 		`"	nostar unstack nonumber ///"' _n ///
+		`"coef(`coefs') ///"' _n ///
 		`"	compress nomtitle nonote noobs label booktabs ///"' _n ///
 		`"	title("`grouplabel' Headline Summary Statistics") ///"' _n ///
 		`"	collabels("Mean" "SD" "Min" "Max" "N")"' _n ///
@@ -966,7 +996,86 @@ foreach g in `groups' {
 	
 }
 	
-set graphics on 
+}
+
+end
+
+cap prog drop enum_performance 
+prog define enum_performance
+syntax , REPLEVELS(numlist) TEXDIRECTORY(string) ///
+	META(string) METAREPEATS(string) METAGROUPS(string) ENUM(string) ///
+	STATUS(string) SUCCESS(integer) TEAM(string)
+qui {
+
+local hbanner = "*" + ("=")* 65
+local lbanner = "*" + ("-") * 65
+local brek = char(10)
+local tab = char(9)
+local skip = "///" + char(10) + char(9)
+local dol = char(36)
+foreach thing in brek tab {
+	
+	forvalues z = 2/3 {
+	
+		local `thing'`z' = `z' * "``thing''"
+	
+	}
+	
+}
+
+cap mkdir "`macval(texdirectory)'/graphs/performance"
+
+file write myfile _n(2) `"`hbanner'"' _n `"*"' _tab `"Enumerator Performance"' _n ///
+		`"`hbanner'"' _n(2) ///
+		`"`lbanner'"' _n `"*"' _tab `"Repeat Group Counts"' _n ///
+		`"`lbanner'"' _n(2) ///
+		`"file write mytex _n(2) ///"' _n ///
+		`"`"\section{Enumerator Performance}"' _n(2) ///"' _n ///
+		`"	`"\subsection{Repeat Group Counts}"'"'
+
+foreach r in `replevels' {
+			
+	frame `metarepeats' { 
+		
+		levelsof name if index == `r', clean local(frame)
+		levelsof label if index == `r', clean local(frame_desc)
+		levelsof keys if index == `r', clean local(keys)
+		local keys = ustrregexrf("`keys'", "`frame'_key$", "", .)
+		
+	}
+
+	file write myfile _n(2) ///
+		`"tempname check_frame enumerators"' _n(2) ///
+		`"frame copy survey \`enumerators'"' _n ///
+		`"frame \`enumerators' {"' _n(2) ///
+		`"	keep if `status' == `success'"' _n ///
+		`"	keep `enum' `team' key"' _n(2) ///
+		`"}"' _n(2) ///
+		`"frame copy `frame' \`check_frame'"' _n ///
+		`"frame \`check_frame' {"' _n(2) ///
+		`"	collapse (max) repeats = `frame'_key (firstnm) `enum', by(`keys')"' _n(2) ///
+		`"}"' _n(2) ///
+		`"frame \`enumerators' {"' _n(2) ///
+		`"	frlink 1:1 key, frame(\`check_frame')"' _n ///
+		`"	frget repeats, from(\`check_frame')"' _n ///
+		`"	drop \`check_frame' "' _n ///
+		`"	replace repeats = 0 if missing(repeats)"' _n(2) ///
+		`"	bysort `enum': gen total_surveys = _N"' _n(2) ///
+		`"	decode `enum', gen(label)"' _n ///
+		`"	replace label = label + " (" + string(total_surveys) + ")""' _n ///
+		`"	labmask `enum', values(label)"' _n(2) ///
+		`"	graph hbox repeats, ///"' _n ///
+		`"		over(`enum', sort(1)) over(`team') ///"' _n ///
+		`"		nofill ysize(8) ///"' _n ///
+		`"		ytitle("Number of Repeats") ///"' _n ///
+		`"		title("{bf: Are Enumerators Cutting Corners?}", pos(11) size(2.75)) ///"' _n ///
+		`"		subtitle("Number of repeats in `frame_desc' group", pos(11) size(2.5))"' _n ///
+		`"		graph export "`macval(texdirectory)'/graphs/performance/`frame'_repeats.pdf", replace as(pdf)"' _n(2) ///
+		`"latex_figure, figure("graphs/performance/`frame'_repeats.pdf") caption("`frame_desc' Repeat Group")"' _n ///
+		`"}"' _n(2) ///
+		`"cwf survey "'
+	
+}
 	
 }
 
