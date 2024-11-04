@@ -207,13 +207,15 @@ file write myfile ///
 	`"end"' _n(2) ///
 	`"cap prog drop latex_figure"' _n ///
 	`"prog define latex_figure "' _n ///
-	`"syntax , FIGURE(string) CAPTION(string)"' _n ///
+	`"syntax , FIGURE(string) CAPTION(string) NOTES(string) LABEL(string)"' _n ///
 	`"qui {"' _n(2) ///
 	`"file write mytex _n(2) ///"' _n ///
 	`"	`"\clearpage"' _n ///"' _n ///
 	`"   `"\begin{figure}[htbp]"' _n ///"' _n ///
+	`"   `"\label{fig:\`label'}"' _n ///"' _n ///
 	`"	`"\caption{\`caption'}"' _n ///"' _n ///
 	`"	`"\includegraphics[width=\linewidth,keepaspectratio]{\`figure'}"' _n ///"' _n ///
+	`"	`"\raggedright\footnotesize{Notes: \`notes' \par}"' _n ///"' _n ///
 	`"	`"\end{figure}"' _n(2)"' _n(2) ///
 	`"}"' _n ///
 	`"end"' _n(2) ///
@@ -298,6 +300,17 @@ foreach i in 35 123 125 {
 	
 }
 
+clonevar tex_logic = long_relevant
+replace tex_logic = ustrto(long_relevant, "ascii", 1)
+foreach i in 92 35 36 37 38 95 94 123 125 126 {
+
+	replace tex_logic = subinstr(tex_logic, `"`=char(`i')'"', `"\\`=char(`i')'"', .)
+	
+}
+
+replace tex_logic = subinstr(tex_logic, `"`=char(60)'"', `"\textless"', .)
+replace tex_logic = subinstr(tex_logic, `"`=char(62)'"', `"\textgreater"', .)
+
 gen basic_overview = `"`lbanner'"' ///
                 + "`brek'" + "*" + "`tab'" + varlabel + "`brek'" + ///
 				"`lbanner'" + "`brek2'"
@@ -308,6 +321,8 @@ forvalues i = 1/`c(N)' {
 	local repeat = repeat_group[`i']
 	local name = name[`i']
 	local label = tex_varlabel[`i']
+	local tex_logic = tex_logic[`i']
+	local logic = long_relevant[`i']
 	
 	if `repeat' == 0 {
 		
@@ -326,12 +341,18 @@ forvalues i = 1/`c(N)' {
 		
 	}
 	
-	if `type' == 2 {
+	if "`label'" == "" {
+		
+		continue
+		
+	}
+	else if `type' == 2 {
 		
 		overview_select_one, rownum(`i') varname(`name') ///
 			label("`label'") frame(``r_groupname'') ///
 			rgroup(`r_groupname') ///
-			texdirectory("`macval(texdirectory)'")
+			texdirectory("`macval(texdirectory)'") texlogic("`tex_logic'") ///
+			logic("`logic'") ///
 			
 		
 	}
@@ -339,9 +360,19 @@ forvalues i = 1/`c(N)' {
 		
 		overview_select_multiple, frame(``r_groupname'') rownum(`i') ///
 			varname(`name') label("`label'") ///
-			rgroup(`r_groupname') ///
+			rgroup(`r_groupname') texlogic("`tex_logic'") ///
+			logic("`logic'") ///
 			texdirectory("`macval(texdirectory)'")
 			
+	}
+	else if `type' == 4 {
+		
+		continuous_graph, frame(``r_groupname'') rownum(`i') ///
+			varname(`name') label("`label'") ///
+			rgroup(`r_groupname') texlogic("`tex_logic'") ///
+			logic("`logic'") ///
+			texdirectory("`macval(texdirectory)'")
+		
 	}
 	else {
 		
@@ -572,7 +603,7 @@ end
 cap prog drop overview_select_one 
 program define overview_select_one
 syntax , ROWNUM(integer) VARNAME(string) TEXDIRECTORY(string) LABEL(string) ///
-	FRAME(string) RGROUP(string) 
+	FRAME(string) RGROUP(string) [LOGIC(string) TEXLOGIC(string)]
 qui {
 
 
@@ -592,7 +623,25 @@ foreach thing in brek tab {
 	
 }
 
+if "`logic'" == "" {
+	
+	local logic "Always Observed"
+	local texlogic "Always Observed"
+	
+}
+else {
+	
+	local logic "Observed when `logic'"
+	local texlogic "Observed when `texlogic'"
+	
+}
+
 local title = substr("`label'", 1, 80)
+while ustrregexm("`title'", "\\\$") == 1 {
+	
+	local title = substr("`title'", 1, `=strlen("`title'") -1')
+	
+}
 
 frame `frame': cap count if !missing(`varname')
 if _rc | "`r(N)'" == "0" {
@@ -605,14 +654,16 @@ else {
 replace basic_overview = basic_overview + ///
 	"graph hbar (count), over(`varname', sort(1)) `skip'" + ///
 	`"title("{bf}`title'", pos(11) size(2.75)) `skip'"' + ///
-	`"subtitle("`r(N)' observations", pos(11) size(2.5)) `skip'"' + ///
+	`"subtitle(`""\``varname'[qtext]'""', pos(11) size(2.5)) `skip'"' + ///
 	`"name(`varname', replace) `skip'"' + ///
-	`"note(`""\``varname'[qtext]'""', size(2)) `skip'"' + ///
+	`"note(`"`logic'"', size(1.5)) `skip'"' + ///
 	`"ytitle("Frequency", size(2.5)) `skip'"' + ///
 	`"ylabel(, gmin gmax)"' + ///
 	`"`brek'graph export `skip'"`macval(texdirectory)'/graphs/`rgroup'/`varname'.pdf""' + ///
 	`", `skip' name(`varname') as(pdf) replace`brek'"' + ///
-	`"latex_figure, figure("graphs/`rgroup'/`varname'.pdf") caption("`title'")"' ///
+	`"latex_figure, figure("graphs/`rgroup'/`varname'.pdf") caption("`title'") `skip'"' + ///
+	`"notes(`texlogic'; `r(N)' total observations.) `skip'"' + ///
+	`"label(`varname')`brek'"' ///
 	in `rownum'
 
 }
@@ -622,7 +673,7 @@ end
 cap prog drop overview_select_multiple 
 program define overview_select_multiple
 syntax , ROWNUM(integer) VARNAME(string) LABEL(string) FRAME(string) ///
-	TEXDIRECTORY(string) RGROUP(string)
+	TEXDIRECTORY(string) RGROUP(string) [LOGIC(string) TEXLOGIC(string)]
 qui {
 
 local tex_varlabel = tex_varlabel[`rownum']
@@ -643,12 +694,30 @@ foreach thing in brek tab {
 
 local uid = var_uid[`rownum']
 
+if "`logic'" == "" {
+	
+	local logic "Always Observed"
+	local texlogic "Always Observed"
+	
+}
+else {
+	
+	local logic "Observed when `logic'"
+	local texlogic "Observed when `texlogic'"
+	
+}
+
 local j = 0
 valuesof row_n if var_uid == `uid'
 local rows `r(values)'
 local levels : word count `rows'
 local ysize = ceil(`levels'/4)
 local title = substr("`label'", 1, 80)
+while ustrregexm("`title'", "\\\$") {
+	
+	local title = substr("`title'", 1, `=strlen("`title'") -1')
+	
+}
 
 foreach m in `rows' {
 	
@@ -680,20 +749,94 @@ else {
 		`"yvaroptions(relabel(`lgnd') `skip'"' + ///
 		`"label(labsize(6pt))) `skip'"' + ///
 		`"title("{bf}`title'", pos(11) size(2.75)) `skip'"' + ///
-		`"subtitle("`r(N)' observations", pos(11) size(2.5)) `skip'"' + ///
+		`"subtitle(`""\``varname'[qtext]'""', pos(11) size(2.5)) `skip'"' + ///
 		`"name(`varname', replace) `skip'ysize(`ysize') `skip'"' + ///
-		`"note(`""\``varname'[qtext]'""', size(2)) `skip'"' + ///
+		`"note(`"`logic'"', size(1.5)) `skip'"' + ///
 		`"ytitle("Frequency", size(2.5)) `skip'"' + ///
 		`"ylabel(, gmin gmax)"' + ///
 		`"`brek'graph export `skip'"`macval(texdirectory)'/graphs/`rgroup'/`varname'.pdf""' + ///
 		`", `skip' name(`varname') as(pdf) replace`brek'"' + ///
-		`"latex_figure, figure(graphs/`rgroup'/`varname'.pdf) caption(`title')"' ///
+		`"latex_figure, figure(graphs/`rgroup'/`varname'.pdf) caption(`title') `skip'"' + ///
+		`"label(`varname') `skip'"' + ///
+		`"notes(`texlogic'; `r(N)' total observations.)"' ///
 		in `rownum'
 		
 }
 	
 }
 end
+
+cap prog drop continuous_graph 
+program define continuous_graph
+syntax , ROWNUM(integer) VARNAME(string) TEXDIRECTORY(string) LABEL(string) ///
+	FRAME(string) RGROUP(string) [LOGIC(string) TEXLOGIC(string)]
+qui {
+
+
+local tex_varlabel = tex_varlabel[`rownum']
+local hbanner = "*" + ("=")* 65
+local lbanner = "*" + ("-") * 65
+local brek = char(10)
+local tab = char(9)
+local skip = "///" + char(10) + char(9)
+foreach thing in brek tab {
+	
+	forvalues z = 2/3 {
+	
+		local `thing'`z' = `z' * "``thing''"
+	
+	}
+	
+}
+
+if "`logic'" == "" {
+	
+	local logic "Always Observed"
+	local titlogic "Always Observed"
+	
+}
+else {
+	
+	local logic "Observed when `logic'"
+	local texlogic "Observed when `texlogic'"
+	
+}
+
+local title = substr("`label'", 1, 80)
+while ustrregexm("`title'", "\\\$") == 1 {
+	
+	local title = substr("`title'", 1, `=strlen("`title'") -1')
+	
+}
+
+frame `frame': cap count if !missing(`varname')
+if _rc | "`r(N)'" == "0" {
+	
+	replace basic_overview = "" in `rownum'
+	
+}
+else {
+	
+	replace basic_overview = basic_overview + ///
+	`"graph box `varname', `skip'"' + ///
+	`"title("{bf:`title'}", size(2.75) pos(11)) `skip'"' + ///
+	`"subtitle(`""\``varname'[qtext]'""', pos(11) size(2.5)) `skip'"' + ///
+	`"name(`varname', replace) `skip'"' + ///
+	`"note(`"`logic'"', size(1.5)) `skip'"' + ///
+	`"ytitle("Value", size(2.5)) `skip'"' + ///
+	`"ylabel(, gmin gmax) `skip'"' + ///
+	`"marker(1, mlabel(`varname') mlabpos(3) mlabsize(6pt))"' + ///
+	`"`brek'graph export `skip'"`macval(texdirectory)'/graphs/`rgroup'/`varname'.pdf""' + ///
+	`", `skip' name(`varname') as(pdf) replace`brek'"' + ///
+	`"latex_figure, figure("graphs/`rgroup'/`varname'.pdf") caption("`title'") `skip'"' + ///
+	`"label(`varname') `skip'"' + ///
+	`"notes(`texlogic'; `r(N)' total observations.) `brek'"' ///
+	in `rownum'
+
+}
+}
+end
+
 
 cap prog drop missingness_check
 program define missingness_check 
@@ -1088,7 +1231,9 @@ foreach r in `replevels' {
 		`"		title("{bf: Are Enumerators Cutting Corners?}", pos(11) size(2.75)) ///"' _n ///
 		`"		subtitle("Number of repeats in `frame_desc' group", pos(11) size(2.5))"' _n ///
 		`"		graph export "`macval(texdirectory)'/graphs/performance/`frame'_repeats.pdf", replace as(pdf)"' _n(2) ///
-		`"latex_figure, figure("graphs/performance/`frame'_repeats.pdf") caption("`frame_desc' Repeat Group")"' _n ///
+		`"latex_figure, figure("graphs/performance/`frame'_repeats.pdf") caption("`frame_desc' Repeat Group") `skip'"' ///
+		`"		label(fig:`frame'_repeats) `skip'"' ///
+		`"		notes("This graph shows the distribution of number of times each enumerator filled out the '`frame_desc'' repeat group. A consistently low number suggests possibly deliberately skipping relevant sections of the survey.")"' _n ///
 		`"}"' _n(2) ///
 		`"cwf survey "'
 	
